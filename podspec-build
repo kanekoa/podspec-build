@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+
+require 'xcodeproj'
+require 'erb'
+require 'optparse'
+
+def find_no_arc_files(xcodeproj_path, target_name)
+  project = Xcodeproj::Project.open(xcodeproj_path)
+  target = project.targets.select { |target|
+    target.name == target_name }.first
+  source_files = target.source_build_phase.files
+  no_arc_source_files = source_files.select { |file|
+    settings = file.settings
+    next false unless settings
+    compiler_flags = settings['COMPILER_FLAGS']
+    next false unless compiler_flags
+    compiler_flags.include?('-fno-objc-arc')
+  }
+  return no_arc_source_files.map { |file|
+    file.display_name
+  }
+end
+
+arguments = {}
+optparser = OptionParser.new do |parser|
+  parser.on('--xcodeproj XCODEPROJ', '.xcodeproj') {|v| arguments[:xcodeproj] = v}
+  parser.on('--target TARGET', 'target in .xcodeproj') {|v| arguments[:target] = v}
+  parser.on('--template TEMPLATE', 'podspec erb template') {|v| arguments[:template] = v}
+end
+optparser.parse!
+
+[:xcodeproj, :target, :template].each { |opt|
+  next unless arguments[opt].nil?
+  error = OptionParser::MissingArgument.new
+  error.set_option('--' + opt.to_s ,nil)
+  raise error
+}
+
+no_arc_source_files = find_no_arc_files(arguments[:xcodeproj], arguments[:target])
+
+ERB.new(File.read(arguments[:template]), nil ,'%').run(binding)
+
